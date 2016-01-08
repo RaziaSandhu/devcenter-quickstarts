@@ -4,10 +4,10 @@ Source code for the **Request Signature** and **Embedded Signing** Quickstart ex
 
 **Pre-requisites**
 
-To get started you just need: 
+It's free to start using the DocuSign API, you just need:
 
-1. DocuSign Developer Sandbox (Free)
-2. Integrator Key (aka API key).
+- DocuSign Developer Sandbox 
+- Integrator Key (aka API key).
 
 You can sign-up directly from the Dev Center or [here](https://secure.docusign.com/signup/developer).  Once you activate your developer sandbox you can create your Integrator Key through your account preferences screen.
 
