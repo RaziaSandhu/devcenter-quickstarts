@@ -1,69 +1,138 @@
-// Install NPM package or download source
-// https://www.npmjs.com/package/docusign-node
-var docusign = require('docusign-node');
-
+var docusign = require('docusign-esign');
 var async = require('async');
-var assert = require('assert');
-var fs = require('fs');
 
-var integratorKey = "INTEGRATOR_KEY";
-var email = "EMAIL";
-var password = "PASSWORD";
+var integratorKey  = '[INTEGRATOR_KEY]',    // Integrator Key associated with your DocuSign Integration
+  email            = '[USERNAME]',          // Email for your DocuSign Account
+  password         = '[PASSWORD]',          // Password for your DocuSign Account
+  recipientName    = '[RECIPIENT_NAME]',    // Recipient's Full Name
+  recipientEmail   = '[RECIPIENT_EMAIL]';   // Recipient's Email
+
+// configure the DocuSign environment to use (currently set to demo)
+var basePath = "https://demo.docusign.net/restapi";
+
+// configure the document we want signed
+const SignTest1File = "[PATH/TO/DOCUMENT/TEST.PDF]";
+var envelopeId = '';
+
+// initialize the api client
+var apiClient = new docusign.ApiClient();
+apiClient.setBasePath(basePath);
+
+// create JSON formatted auth header
+var creds = JSON.stringify({
+  Username: email,
+  Password: password,
+  IntegratorKey: integratorKey
+});
+
+// configure DocuSign authentication header
+apiClient.addDefaultHeader("X-DocuSign-Authentication", creds);
+
+// assign api client to the Configuration object
+docusign.Configuration.default.setDefaultApiClient(apiClient);
 
 async.waterfall([
-    // Initialize DocuSign Object with Integratory Key and Desired Environment
-    function init (next) {
-    docusign.init(integratorKey, 'demo', 'false', function (error, response) {
-      var message = response.message;
-      assert.strictEqual(message, 'successfully initialized');
-      console.log(message);
-      next(null);
+  function login (next) {
+    // login call available off the AuthenticationApi
+    var authApi = new docusign.AuthenticationApi();
+
+    // login has some optional parameters we can set
+    var loginOps = new authApi.LoginOptions();
+    loginOps.setApiPassword("true");
+    loginOps.setIncludeAccountIdGuid("true");
+    authApi.login(loginOps, function (err, loginInfo, response) {
+      if (err) {
+        return next(err);
+      }
+      if (loginInfo) {
+        // list of user account(s)
+        // note that a given user may be a member of multiple accounts
+        var loginAccounts = loginInfo.getLoginAccounts();
+        console.log("LoginInformation: " + JSON.stringify(loginAccounts));
+        next(null, loginAccounts);
+      }
     });
-    },
-    // Authenticate Yourself With DocuSign to Recieve an OAuth Token and BaseUrl
-    function createClient(next) {
-      docusign.createClient(email, password, function (error, response) {
-        assert.ok(!response.error);
-        docusign.client = response;
-        next(null, docusign.client);
-      });
-    },
-    // create and send envelope (signature request) 
-    function requestSignature(client, next) {
-        // configure the envelope's email subject and recipient(s)
-        var emailSubject = "EMAIL_SUBJECT";
-        var recipients = {};
+  },
 
-        // add one signer to the envelope as well as one signHere tab located at
-        // 100 pixels right and 150 pixels down from top left corner of document
-        recipients.signers = [{
-          'email': "RECIPIENT_EMAIL",
-          'name': "RECIPIENT_NAME",
-          'recipientId': 1,
-          'tabs': {
-            'signHereTabs': [{
-              'xPosition': '100',
-              'yPosition': '150',
-              'documentId': '1',
-              'pageNumber': '1'
-            }]
-          }
-        }];
+  function createAndSendEnvelope (loginAccounts, next) {
 
-        // grab the document bytes of the document we want signed
-        var document = fs.readFileSync("TEST.PDF");
+    var fileBytes = null;
+    try {
+        var fs = require('fs'),
+            path = require('path');
+        // read file from a local directory
+        fileBytes = fs.readFileSync(path.resolve(__filename + '/..' + SignTest1File));
 
-        // add document information 
-        var files = [{
-          name: "test.pdf",
-          extension: 'pdf',
-          base64: new Buffer(document).toString('base64')
-        }];
-
-        // Send the envelope!
-        client.envelopes.sendEnvelope(recipients, emailSubject, files, null, function (error, response) {
-          assert.ok(!error);
-          console.log('Envelope Information is: \n' + JSON.stringify(response) + "\n");
-        });
+    } catch (ex) {
+        // handle error
+        console.log("Exception: " + ex);
     }
-]);
+
+    // create a new envelope object that we will manage the signature request through
+    var envDef = new docusign.EnvelopeDefinition();
+    envDef.setEmailSubject("[DocuSign Node SDK] - Please sign this doc");
+
+    // add a document to the envelope
+    var doc = new docusign.Document();
+    var base64Doc = new Buffer(fileBytes).toString('base64');
+    doc.setDocumentBase64(base64Doc);
+    doc.setName("TestFile.pdf");
+    doc.setDocumentId("1");
+
+    var docs = [];
+    docs.push(doc);
+    envDef.setDocuments(docs);
+
+    // Add a recipient to sign the document
+    var signer = new docusign.Signer();
+    signer.setName(recipientName);
+    signer.setEmail(recipientEmail);
+    signer.setRecipientId("1");
+
+    // create a signHere tab somewhere on the document for the signer to sign
+    // default unit of measurement is pixels, can be mms, cms, inches also
+    var signHere = new docusign.SignHere();
+    signHere.setDocumentId("1");
+    signHere.setPageNumber("1");
+    signHere.setRecipientId("1");
+    signHere.setXPosition("100");
+    signHere.setYPosition("100");
+
+    // can have multiple tabs, so need to add to envelope as a single element list
+    var signHereTabs = [];
+    signHereTabs.push(signHere);
+    var tabs = new docusign.Tabs();
+    tabs.setSignHereTabs(signHereTabs);
+    signer.setTabs(tabs);
+
+    // configure the envelope's recipient(s)
+    envDef.setRecipients(new docusign.Recipients());    
+    envDef.getRecipients().setSigners([]);
+    envDef.getRecipients().getSigners().push(signer);
+
+    // send the envelope (otherwise it will be "created" in the Draft folder)
+    envDef.setStatus("sent");
+
+    var envelopesApi = new docusign.EnvelopesApi();
+
+    envelopesApi.createEnvelope(loginAccounts[0].accountId, envDef, null, function(error, envelopeSummary, response) {
+        if (error) {
+            return next(error);
+        }
+
+        if (envelopeSummary) {
+            console.log("EnvelopeSummary: " + JSON.stringify(envelopeSummary));
+            envelopeId = envelopeSummary.envelopeId;
+            next();
+        }
+    });
+  }
+
+], function end (error) {
+  if (error) {
+    console.log('Error: ', error);
+    process.exit(1);
+  }
+  process.exit();
+}
+);
