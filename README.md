@@ -31,7 +31,7 @@ This quickstart shows you how to embed document signing directly into your websi
 
 ## Additional Resources
 
-More code samples available through the DocuSign API [Recipes](https://www.docusign.com/developer-center/recipes) page.  
+More code samples available through the DocuSign [API Recipes](https://www.docusign.com/developer-center/recipes) page.  
 
 ## License
 
